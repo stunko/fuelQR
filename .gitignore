@@ -1,0 +1,28 @@
+# Temporary files
+__pycache__
+.pytest_cache
+*.pyc
+.python-version
+
+# MacOS
+__MACOSX
+.AppleDouble
+.DS_Store
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# IDE files
+.ai*
+.idea
+.vscode
+
+# Logs / Docs / ..
+*.log
+*.http
+
+doc
+temp
+
+configs/*
