@@ -30,18 +30,34 @@ class QrGetter:
         self._fuel = fuel
         self._session = requests.Session()
 
+    @property
+    def _default_headers(self) -> dict:
+        """"""
+        return {
+            "authority": config.DEFAULT_ENDPOINT,
+            "accept": "*/*",
+            "content-type": "application/json",
+            "referer": f"{config.DEFAULT_ENDPOINT}/clientapp?mode=max-mini-app"
+        }
+
     def __do_call(
             self,
+            uri: str,
             method: str,
-            url: str = None,
+            headers: dict = None,
             *args,
             **kwargs
     ) -> requests.Response:
         """"""
-        url = url or config.BOT_ENDPOINT
+        url = f"{config.DEFAULT_ENDPOINT}/{uri}"
+        headers = {**self._default_headers, **headers} \
+            if headers else self._default_headers
+        self._session.headers = headers
+
         LOG.debug(
-            f"call `{method}` for `{url}` with params {args}, {kwargs}...")
+            f"call `{method}` for `{uri}` with params {args}, {kwargs}...")
         method = getattr(self._session, method)
+
         response = method(url, *args, **kwargs)
         response.raise_for_status()
         try:
@@ -52,14 +68,19 @@ class QrGetter:
         LOG.debug(f"response raw - `{raw}`")
         return response
 
-    def generate(self) -> Any:
+    def _get_fuel_type(self) -> dict:
+        """"""
+        uri = "fuel/qr/fuel-types"
+        response = self.__do_call(method="get", uri=uri)
+        return response.json().get("data")
+
+    def generate_qr(self) -> Any:
         """"""
         LOG.info(f"Get fuel `QR` for `{self._number.upper()}`...")
-        response = self.__do_call(method="get")
-        data = response.json().get("data", {})
-        if data.get("wait"):
+        fuel_type = self._get_fuel_type()
+        if fuel_type.get("wait"):
             LOG.info(f"Fuel tanks is empty, try tomorrow...")
-            return pathlib.Path(config.LOG_PATH).joinpath("qr.log")
+        return pathlib.Path(config.LOG_PATH).joinpath("qr.log")
 
 
 def worker_wrapper(kwargs) -> None:
@@ -69,7 +90,7 @@ def worker_wrapper(kwargs) -> None:
     try:
         # qr code poller
         qr_code = try_until(
-            worker.generate,
+            worker.generate_qr,
             interval=config.POLL_INTERVAL,
             timeout=config.POLL_TIMEOUT
         )
