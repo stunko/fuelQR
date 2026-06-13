@@ -25,4 +25,5 @@ __MACOSX
 doc
 temp
 
-configs/*
+configs/settings*
+

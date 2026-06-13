@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 from configs import config
+from configs.fuels import BaseFuel
 from libs.helpers import try_until
 from libs.logger import get_log
 from libs.smtp import SMTPClient
@@ -20,15 +21,17 @@ class QrGetter:
             self,
             number: str,
             phone_number: str,
-            fuel: str,
+            fuel_types: list | BaseFuel,
             email: str = None,
     ) -> None:
         """"""
         self.email = email
         self._number = number
         self._phone_number = phone_number
-        self._fuel = fuel
+        self._fuel_types = [fuel_types] if not isinstance(fuel_types,
+                                                          list) else fuel_types
         self._session = requests.Session()
+        self._fuel = None
 
     @property
     def _default_headers(self) -> dict:
@@ -74,13 +77,30 @@ class QrGetter:
         response = self.__do_call(method="get", uri=uri)
         return response.json().get("data")
 
+    def _get_available_fuel(self) -> list:
+        """"""
+        uri = "map/a"
+        response = self.__do_call(method="get", uri=uri)
+        return response.json().get("gas_stations", [])
+
+    @property
+    def fuel(self) -> BaseFuel:
+        if self._fuel is None:
+            LOG.info(f"Get preferred fuel from {self._fuel_types}...")
+            available_fuels = self._get_available_fuel()
+            fuel_types = (f(available_fuels) for f in self._fuel_types)
+            self._fuel = max(fuel_types, key=lambda f: f.percent)
+            LOG.debug(f"Set preferred fuel type `{self._fuel}`")
+        return self._fuel
+
     def generate_qr(self) -> Any:
         """"""
         LOG.info(f"Get fuel `QR` for `{self._number.upper()}`...")
         fuel_type = self._get_fuel_type()
+        fuel = self.fuel
         if fuel_type.get("wait"):
             LOG.info(f"Fuel tanks is empty, try tomorrow...")
-        return pathlib.Path(config.LOG_PATH).joinpath("qr.log")
+        return False
 
 
 def worker_wrapper(kwargs) -> None:
@@ -98,8 +118,8 @@ def worker_wrapper(kwargs) -> None:
         LOG.error(e)
     if not qr_code:
         LOG.warning(f"No `QR code` obtained...")
-        return
+        #return
     SMTPClient().send(
         address=worker.email,
-        file_path=qr_code,
+        file_path=pathlib.Path(config.LOG_PATH).joinpath("qr.log"),
     )
