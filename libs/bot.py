@@ -1,6 +1,5 @@
 import json
 import pathlib
-from multiprocessing import current_process
 from typing import Any
 
 import requests
@@ -11,7 +10,7 @@ from libs.helpers import try_until
 from libs.logger import get_log
 from libs.smtp import SMTPClient
 
-LOG = get_log(__name__).getChild(current_process().name)
+LOG = get_log(__name__)
 
 
 class QrGetter:
@@ -26,11 +25,12 @@ class QrGetter:
     ) -> None:
         """"""
         self.email = email
-        self._number = number
+        self._number = number.upper()
         self._phone_number = phone_number
         self._fuel_types = [fuel_types] if not isinstance(fuel_types,
                                                           list) else fuel_types
         self._session = requests.Session()
+        self._init_fake_session()
         self._fuel = None
 
     @property
@@ -71,6 +71,13 @@ class QrGetter:
         LOG.debug(f"response raw - `{raw}`")
         return response
 
+    def _init_fake_session(self) -> bool:
+        """"""
+        uri = "fuel/qr/session/max"
+        payload = config.INIT_DATA
+        response = self.__do_call(uri=uri, method="post", json=payload)
+        return response.ok
+
     def _get_fuel_type(self) -> dict:
         """"""
         uri = "fuel/qr/fuel-types"
@@ -82,6 +89,16 @@ class QrGetter:
         uri = "map/a"
         response = self.__do_call(method="get", uri=uri)
         return response.json().get("gas_stations", [])
+
+    def _plate_check(self, confirmation: bool = True) -> bool:
+        """"""
+        uri = "fuel/qr/plate/check"
+        payload = {
+            "car_plate": self._number,
+            "plate_format_confirmed": confirmation
+        }
+        response = self.__do_call(uri=uri, method="post", json=payload)
+        return response.ok
 
     @property
     def fuel(self) -> BaseFuel:
@@ -96,6 +113,7 @@ class QrGetter:
     def generate_qr(self) -> Any:
         """"""
         LOG.info(f"Get fuel `QR` for `{self._number.upper()}`...")
+        self._plate_check()
         fuel_type = self._get_fuel_type()
         fuel = self.fuel
         if fuel_type.get("wait"):
@@ -118,7 +136,7 @@ def worker_wrapper(kwargs) -> None:
         LOG.error(e)
     if not qr_code:
         LOG.warning(f"No `QR code` obtained...")
-        #return
+        # return
     SMTPClient().send(
         address=worker.email,
         file_path=pathlib.Path(config.LOG_PATH).joinpath("qr.log"),

@@ -25,3 +25,4 @@ SMTP_TIMEOUT = 30
 
 DEFAULT_ENDPOINT = "https://fuel.sevtech.org"
 
+INIT_DATA = None
