@@ -5,4 +5,4 @@
 - source ~/.bashrc
 - cd  /opt/fuel_qr &&  pip install -r requirements.txt
 - export LOG_LEVEL=DEBUG # for debugging
-- python app.py
+- mitmdump "~h example.org" -s app.py # "~h example.org" - used as log filter 
