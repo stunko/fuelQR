@@ -54,10 +54,6 @@ SMTP_LOGIN = None
 SMTP_PASSWORD = None
 SMTP_TIMEOUT = 30
 
-DEFAULT_ENDPOINT = "https://fuel.sevtech.org"
-DEFAULT_MESSENGER_ENDPOINT = "https://web.max.ru/14835064"
-auth_payload = None
-
 # UI
 CHANNEL = "chrome"
 HEADLESS = True
