@@ -9,6 +9,7 @@ from configs.fuels import BaseFuel
 from libs.helpers import try_until
 from libs.logger import get_log
 from libs.smtp import SMTPClient
+from libs.ui import FakeWebMessenger
 
 LOG = get_log(__name__)
 
@@ -29,9 +30,20 @@ class QrGetter:
         self._phone_number = phone_number
         self._fuel_types = [fuel_types] if not isinstance(fuel_types,
                                                           list) else fuel_types
-        self._session = requests.Session()
-        self._init_fake_session()
         self._fuel = None
+        self.__session = None
+
+    @property
+    def _session(self) -> requests.Session:
+        """"""
+        if self.__session is None:
+            self.__session = requests.Session()
+            self.__session.verify = False
+            # get session payload
+            with FakeWebMessenger() as messenger:
+                payload = messenger.init_fake_session()
+            self._init_fake_session(payload)
+        return self.__session
 
     @property
     def _default_headers(self) -> dict:
@@ -71,11 +83,14 @@ class QrGetter:
         LOG.debug(f"response raw - `{raw}`")
         return response
 
-    def _init_fake_session(self) -> bool:
+    def _init_fake_session(self, payload: dict) -> bool:
         """"""
         uri = "fuel/qr/session/max"
-        payload = config.INIT_DATA
-        response = self.__do_call(uri=uri, method="post", json=payload)
+        response = self.__do_call(
+            uri=uri,
+            method="post",
+            json=payload
+        )
         return response.ok
 
     def _get_fuel_type(self) -> dict:
@@ -113,31 +128,43 @@ class QrGetter:
     def generate_qr(self) -> Any:
         """"""
         LOG.info(f"Get fuel `QR` for `{self._number.upper()}`...")
-        self._plate_check()
-        fuel_type = self._get_fuel_type()
-        fuel = self.fuel
-        if fuel_type.get("wait"):
-            LOG.info(f"Fuel tanks is empty, try tomorrow...")
+        try:
+            self._plate_check()
+            fuel_type = self._get_fuel_type()
+            LOG.info(f"Persistent fuel is `{self.fuel}`...")
+            if fuel_type.get(
+                    "registration_state") == config.RegistrationStates.closed:
+                LOG.info(f"Fuel tanks is empty, try later...")
+        except requests.HTTPError as e:
+            LOG.error(e)
+            if e.response.status_code == config.ErrCode.Unauthorized:
+                self.close()
         return False
 
+    def close(self) -> None:
+        """"""
+        if self.__session:
+            LOG.info(f"Close session `{self.__session}`...")
+            self.__session.close()
+        self.__session = None
 
-def worker_wrapper(kwargs) -> None:
-    """warker wrapper """
-    qr_code = None
-    worker = QrGetter(**kwargs)
+
+def worker_wrapper(payloads) -> None:
+    """worker wrapper """
+    worker = QrGetter(**payloads)
     try:
         # qr code poller
-        qr_code = try_until(
+        try_until(
             worker.generate_qr,
             interval=config.POLL_INTERVAL,
-            timeout=config.POLL_TIMEOUT
+            timeout=config.POLL_TIMEOUT,
+            times=1,
+            error_msg="No `QR code` obtained..."
         )
     except Exception as e:
         LOG.error(e)
-    if not qr_code:
-        LOG.warning(f"No `QR code` obtained...")
-        # return
-    SMTPClient().send(
-        address=worker.email,
-        file_path=pathlib.Path(config.LOG_PATH).joinpath("qr.log"),
-    )
+    if config.USE_SMTP:
+        SMTPClient().send(
+            address=worker.email,
+            file_path=pathlib.Path(config.LOG_PATH).joinpath("qr.log"),
+        )

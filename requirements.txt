@@ -1,5 +1,6 @@
 inflect==7.5.0
 humanfriendly==10.0
 mitmproxy==12.2.3
+playwright==1.60.0
 requests==2.34.2
 simple-settings==1.2.0
