@@ -89,10 +89,11 @@ class FakeWebMessenger:
             LOG.debug(f"Create mini-app auth session...")
             session = self._get_button(
                 name=config.UILabels.create_session)
-            with self._page.expect_request(
-                    lambda r: endpoint in r.url) as request_info:
+            with (self._page.expect_response(
+                    lambda r: endpoint in r.url) as response_info):
                 session.click()
-                request = request_info.value
+                response = response_info.value
+                request = response.request
                 return request.post_data_json
         except Exception as e:
             LOG.error(

@@ -17,7 +17,8 @@ def get_log(name: str) -> Logger:
         )
 
         log.setLevel(config.LOG_LEVEL.upper())
-        log_path = pathlib.Path(config.LOG_PATH).joinpath("qr.log")
+        root_dir = pathlib.Path(__file__).resolve().parents[1]
+        log_path = root_dir / config.LOG_PATH / "qr.log"
 
         # set file handler
         file_handler = RotatingFileHandler(

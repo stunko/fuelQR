@@ -1,8 +1,13 @@
 import json
 import pathlib
+from datetime import datetime
 from typing import Any
 
+import qrcode
 import requests
+from PIL import Image
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from configs import config
 from configs.fuels import BaseFuel
@@ -14,23 +19,22 @@ from libs.ui import FakeWebMessenger
 LOG = get_log(__name__)
 
 
-class QrGetter:
+class FuelQrCodeManager:
     """"""
 
     def __init__(
             self,
             number: str,
-            phone_number: str,
             fuel_types: list | BaseFuel,
             email: str = None,
     ) -> None:
         """"""
         self.email = email
-        self._number = number.upper()
-        self._phone_number = phone_number
-        self._fuel_types = [fuel_types] if not isinstance(fuel_types,
-                                                          list) else fuel_types
-        self._fuel = None
+        self._number = number  # .upper()
+        if not isinstance(fuel_types, (list, tuple)):
+            fuel_types = [fuel_types]
+        self._fuel_types = fuel_types
+        self.__fuel = None
         self.__session = None
 
     @property
@@ -39,20 +43,39 @@ class QrGetter:
         if self.__session is None:
             self.__session = requests.Session()
             self.__session.verify = False
+            # setup request retries
+            retries = Retry(
+                # Retry attempts
+                total=5,
+                # Pause between attempts (1 sec, 2 sec, 4 sec...)
+                backoff_factor=1,
+                # Retries only server errors
+                status_forcelist=config.ErrCodesRequestRetry().items,
+                raise_on_status=False
+            )
+            adapter = HTTPAdapter(max_retries=retries)
+            self.__session.mount("http://", adapter)
+            self.__session.mount("https://", adapter)
             # get session payload
             with FakeWebMessenger() as messenger:
                 payload = messenger.init_fake_session()
             self._init_fake_session(payload)
+            self._session_status()
+            self._plate_check()
         return self.__session
 
     @property
     def _default_headers(self) -> dict:
         """"""
         return {
-            "authority": config.DEFAULT_ENDPOINT,
-            "accept": "*/*",
-            "content-type": "application/json",
-            "referer": f"{config.DEFAULT_ENDPOINT}/clientapp?mode=max-mini-app"
+            "Authority": config.DEFAULT_ENDPOINT,
+            "Accept": "*/*",
+            "Content-type": "application/json",
+            "Referer": f"{config.DEFAULT_ENDPOINT}/clientapp?mode=max-mini-app",
+            "X-Fuel-Client-App": "clientapp",
+            "X-Fuel-Client-Mode": "max-mini-app",
+            "X-Fuel-Client-Ua-Mobile": "0",
+            "Origin": config.DEFAULT_ENDPOINT
         }
 
     def __do_call(
@@ -68,19 +91,18 @@ class QrGetter:
         headers = {**self._default_headers, **headers} \
             if headers else self._default_headers
         self._session.headers = headers
-
         LOG.debug(
-            f"call `{method}` for `{uri}` with params {args}, {kwargs}...")
+            f"call `{method}` for `{url}` with params {args}, {kwargs} headers {self._session.headers}...")
         method = getattr(self._session, method)
 
         response = method(url, *args, **kwargs)
-        response.raise_for_status()
         try:
             LOG.debug(f"response status code -  `[{response.status_code}]`...")
             raw = response.json()
         except json.JSONDecodeError:
             raw = response.content
         LOG.debug(f"response raw - `{raw}`")
+        response.raise_for_status()
         return response
 
     def _init_fake_session(self, payload: dict) -> bool:
@@ -93,11 +115,44 @@ class QrGetter:
         )
         return response.ok
 
-    def _get_fuel_type(self) -> dict:
+    def _session_status(self) -> bool:
+        """"""
+        uri = "fuel/qr/session/status"
+        response = self.__do_call(
+            uri,
+            method="get"
+        )
+        return response.ok
+
+    def _create_fuel_qr(self,
+                        plate_format_confirmed: bool = False) -> str | None:
+        """"""
+        uri = "fuel/qr/create"
+        payload = {
+            "car_plate": self._number,
+            "fuel_type_id": self.__fuel.id,
+            "plate_format_confirmed": plate_format_confirmed
+        }
+        response = self.__do_call(
+            uri=uri,
+            method="post",
+            json=payload
+        )
+        data = response.json().get("data", {})
+        if data:
+            return data["ticket"]["deeplink"]
+
+    def _get_fuel_types(self) -> bool:
         """"""
         uri = "fuel/qr/fuel-types"
-        response = self.__do_call(method="get", uri=uri)
-        return response.json().get("data")
+        if not self.__fuel:
+            response = self.__do_call(method="get", uri=uri)
+            data = response.json().get("data", {})
+            if data.get("registration_state",
+                        "") != config.RegistrationStates.open:
+                return False
+            self.__fuel = self._set_preferred_fuel()
+        return True
 
     def _get_available_fuel(self) -> list:
         """"""
@@ -105,7 +160,7 @@ class QrGetter:
         response = self.__do_call(method="get", uri=uri)
         return response.json().get("gas_stations", [])
 
-    def _plate_check(self, confirmation: bool = True) -> bool:
+    def _plate_check(self, confirmation: bool = False) -> bool:
         """"""
         uri = "fuel/qr/plate/check"
         payload = {
@@ -115,31 +170,61 @@ class QrGetter:
         response = self.__do_call(uri=uri, method="post", json=payload)
         return response.ok
 
-    @property
-    def fuel(self) -> BaseFuel:
-        if self._fuel is None:
+    def _set_preferred_fuel(self) -> BaseFuel:
+        available_fuels = self._get_available_fuel()
+        if config.GET_FUEL_WITH_MAXIMUM_BALANCES:
             LOG.info(f"Get preferred fuel from {self._fuel_types}...")
-            available_fuels = self._get_available_fuel()
             fuel_types = (f(available_fuels) for f in self._fuel_types)
-            self._fuel = max(fuel_types, key=lambda f: f.percent)
-            LOG.debug(f"Set preferred fuel type `{self._fuel}`")
-        return self._fuel
+            fuel = max(fuel_types, key=lambda f: f.percent)
+        else:
+            fuel = self._fuel_types[0](available_fuels)
+        LOG.debug(f"Set preferred fuel type `{fuel}`")
+        return fuel
 
-    def generate_qr(self) -> Any:
+    def get_fuel_qr(self) -> Any:
         """"""
-        LOG.info(f"Get fuel `QR` for `{self._number.upper()}`...")
+        LOG.info(f"Create fuel `QR` for `{self._number}`...")
         try:
-            self._plate_check()
-            fuel_type = self._get_fuel_type()
-            LOG.info(f"Persistent fuel is `{self.fuel}`...")
-            if fuel_type.get(
-                    "registration_state") == config.RegistrationStates.closed:
-                LOG.info(f"Fuel tanks is empty, try later...")
+            if self._get_fuel_types():
+                LOG.info(
+                    f"Persistent and preferred fuel is `{self.__fuel.title}`...")
+                if deep_link := self._create_fuel_qr():
+                    return self._generate_qr(deep_link)
+
         except requests.HTTPError as e:
             LOG.error(e)
-            if e.response.status_code == config.ErrCode.Unauthorized:
+            if e.response.status_code in config.ErrCodesSessionReload().items:
                 self.close()
         return False
+
+    def _generate_qr(self, link: str) -> str:
+        """"""
+        qr = qrcode.QRCode(
+            version=1,
+            # errorCorrectionLevel: 'M'
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=config.QR_BOX_SIZE,
+            # margin: 2
+            border=config.QR_BORDER,
+        )
+
+        qr.add_data(link)
+        qr.make(fit=True)
+        qr_img = qr.make_image(
+            fill_color=config.QR_FILL_COLOR,
+            back_color=config.QR_BACK_COLOR
+        ).convert("RGB")
+        qr_img = qr_img.resize(config.QR_IMAGE_SIZE, Image.Resampling.LANCZOS)
+
+        output_dir = pathlib.Path(__file__).resolve().parents[
+                         1] / config.QR_OUTPUT
+        output_dir.mkdir(exist_ok=True, parents=True)
+
+        file_name = f"{self.__fuel.title}_{datetime.now().strftime('%d%m%y')}.{config.QR_IMAGE_FORMAT.lower()}"
+        output = output_dir / file_name
+        LOG.info(f"save obtained fue qr to `{output}`...")
+        qr_img.save(output, format=config.QR_IMAGE_FORMAT)
+        return output.as_posix()
 
     def close(self) -> None:
         """"""
@@ -147,24 +232,26 @@ class QrGetter:
             LOG.info(f"Close session `{self.__session}`...")
             self.__session.close()
         self.__session = None
+        self.__fuel = None
 
 
-def worker_wrapper(payloads) -> None:
+def worker_wrapper(person: dict) -> None:
     """worker wrapper """
-    worker = QrGetter(**payloads)
+    worker = FuelQrCodeManager(**person)
+    qr_code = None
     try:
         # qr code poller
-        try_until(
-            worker.generate_qr,
+        qr_code = try_until(
+            worker.get_fuel_qr,
             interval=config.POLL_INTERVAL,
-            timeout=config.POLL_TIMEOUT,
-            times=1,
+            timeout=config.POLL_LIMIT,
+            times=config.POLL_COUNT,
             error_msg="No `QR code` obtained..."
         )
     except Exception as e:
         LOG.error(e)
-    if config.USE_SMTP:
+    if config.USE_SMTP and qr_code:
         SMTPClient().send(
             address=worker.email,
-            file_path=pathlib.Path(config.LOG_PATH).joinpath("qr.log"),
+            file_path=qr_code,
         )

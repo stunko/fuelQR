@@ -8,11 +8,30 @@ SIMPLE_SETTINGS = {"OVERRIDE_BY_ENV": True}
 @dataclass
 class RegistrationStates:
     closed: str = "not_open"
+    open: str = "open"
 
 
 @dataclass
-class ErrCode:
+class ErrCodes:
+
+    @property
+    def items(self) -> list:
+        return asdict(self).values()
+
+
+@dataclass
+class ErrCodesSessionReload(ErrCodes):
     Unauthorized: int = 401
+    TooManyRequests: int = 429
+
+
+@dataclass
+class ErrCodesRequestRetry(ErrCodes):
+    InternalServerError: int = 500
+    BadGateway: int = 502
+    ServiceUnavailable: int = 503
+    GatewayTimeout: int = 504
+
 
 
 @dataclass
@@ -26,7 +45,6 @@ class QrSessions:
     """QR session storage"""
     number: str
     fuel_types: list[type(BaseFuel)]
-    phone_number: str
     email: str
 
     def json(self) -> dict:
@@ -43,9 +61,14 @@ LOG_PATH = "logs"
 LOG_SIZE = "1M"
 LOG_LEVEL = "DEBUG"
 STREAM_HANDLER = True
+# utilize the fuel from the maximum remaining volume
+GET_FUEL_WITH_MAXIMUM_BALANCES = True
 
-POLL_TIMEOUT = 1
+# how long bot polling fuel qr code
+POLL_LIMIT = 1
 POLL_INTERVAL = 1
+# how many times bot polling qr code
+POLL_COUNT = None
 
 USE_SMTP = False
 SMTP_SERVER = None
@@ -59,3 +82,12 @@ CHANNEL = "chrome"
 HEADLESS = True
 USER_DATA = ".user_data"
 PAGE_RESOLUTION = {"width": 1280, "height": 800}
+
+# QR code
+QR_BOX_SIZE = 10
+QR_BORDER = 2
+QR_FILL_COLOR = "#000000"
+QR_BACK_COLOR = "#ffffff"
+QR_IMAGE_SIZE = (260, 260)
+QR_IMAGE_FORMAT = "PNG"
+QR_OUTPUT = ".qr_codes"
