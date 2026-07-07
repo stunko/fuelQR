@@ -3,19 +3,20 @@ from dataclasses import dataclass, InitVar
 
 @dataclass
 class BaseFuel:
-    payloads: InitVar[list[dict]]
+    payloads: InitVar[list[dict]] = None
     id: str = None
     code: str = None
     title: str = None
-    percent: int = None
-    addresses: list = None
+    percent: int = 0
+    addresses: list = ""
 
     def __post_init__(self, payloads: list[dict]) -> None:
-        self.percent = sum(s[f"{self.title}_percent"] for s in payloads if
-                           isinstance(s[f"{self.title}_percent"],
-                                      (int, float)))
-        self.addresses = [s["address"] for s in payloads if
-                          s[f"{self.title}_percent"]]
+        if payloads:
+            self.percent = sum(s[f"{self.title}_percent"] for s in payloads if
+                               isinstance(s[f"{self.title}_percent"],
+                                          (int, float)))
+            self.addresses = [s["address"] for s in payloads if
+                              s[f"{self.title}_percent"]]
 
 
 @dataclass

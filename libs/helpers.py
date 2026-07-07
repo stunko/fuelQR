@@ -16,7 +16,7 @@ def try_until(
         error_msg: str = None,
         log: Callable = None,
         interval: int = 1,
-        timeout: int = 360,
+        timeout: int = 3600,
         times: int = None,
         pass_num: bool = False,
 ):

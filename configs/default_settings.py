@@ -21,7 +21,9 @@ class ErrCodes:
 
 @dataclass
 class ErrCodesSessionReload(ErrCodes):
+    BadRequest: int = 400
     Unauthorized: int = 401
+    Forbidden: int = 403
     TooManyRequests: int = 429
 
 
@@ -31,7 +33,6 @@ class ErrCodesRequestRetry(ErrCodes):
     BadGateway: int = 502
     ServiceUnavailable: int = 503
     GatewayTimeout: int = 504
-
 
 
 @dataclass
@@ -52,6 +53,8 @@ class QrSessions:
         return asdict(self)
 
 
+SESSION_TTL = 1800
+
 # relative path to logs dir,
 LOG_PATH = "logs"
 # log size formats
@@ -62,7 +65,7 @@ LOG_SIZE = "1M"
 LOG_LEVEL = "DEBUG"
 STREAM_HANDLER = True
 # utilize the fuel from the maximum remaining volume
-GET_FUEL_WITH_MAXIMUM_BALANCES = True
+GET_FUEL_WITH_MAXIMUM_BALANCES = False
 
 # how long bot polling fuel qr code
 POLL_LIMIT = 1
