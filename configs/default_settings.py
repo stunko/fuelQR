@@ -73,7 +73,7 @@ POLL_INTERVAL = 1
 # how many times bot polling qr code
 POLL_COUNT = None
 
-USE_SMTP = False
+USE_SMTP = True
 SMTP_SERVER = None
 SMTP_PORT = 465
 SMTP_LOGIN = None

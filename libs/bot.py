@@ -203,6 +203,7 @@ class FuelQrCodeManager:
                 LOG.info(
                     f"Persistent and preferred fuel is `{self.__fuel.title}`...")
                 if link := self._create_fuel_qr():
+                    LOG.debug(f"qr code created {link}...")
                     return self._generate_qr(link)
             # reload session triggering if ttl exceeded
             self._check_ttl()
