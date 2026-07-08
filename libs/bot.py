@@ -61,8 +61,11 @@ class FuelQrCodeManager:
             # get fake session payload
             with FakeWebMessenger() as messenger:
                 payload = messenger.init_fake_session()
-            self._init_fake_session(payload)
             self.__ttl_start = time.monotonic()
+            # fake session initialization
+            self._init_fake_session(payload)
+            self._session_status()
+            self._plate_check()
         return self.__session
 
     @property
@@ -93,7 +96,7 @@ class FuelQrCodeManager:
             if headers else self._default_headers
         self._session.headers = headers
         LOG.debug(
-            f"call `{method}` for `{url}` with params {args}, {kwargs} headers {self._session.headers}...")
+            f"call `{method.upper()}` for `{url}` with params {args}, {kwargs} headers {self._session.headers}...")
         method = getattr(self._session, method)
 
         response = method(url, *args, **kwargs)
@@ -137,13 +140,17 @@ class FuelQrCodeManager:
 
     def _check_ttl(self) -> None:
         """"""
-        LOG.debug(f"check session ttl state...")
-        if time.monotonic() - self.__ttl_start >= config.SESSION_TTL:
-            response = requests.Response()
-            response.status_code = config.ErrCodesSessionReload.Unauthorized
-            raise requests.HTTPError(
-                f"session exceeded ttl `{config.SESSION_TTL}`...",
-                response=response)
+        elapsed_time = time.monotonic() - self.__ttl_start
+        LOG.debug(f"check session ttl state, elapsed tine `{elapsed_time}`...")
+
+        if config.SESSION_TTL > elapsed_time:
+            return
+
+        response = requests.Response()
+        response.status_code = config.ErrCodesSessionReload.Unauthorized
+        raise requests.HTTPError(
+            f"session ttl exceeded` {config.SESSION_TTL}`...",
+            response=response)
 
     def _create_fuel_qr(self,
                         plate_format_confirmed: bool = False) -> str | None:
@@ -159,23 +166,21 @@ class FuelQrCodeManager:
             method="post",
             json=payload
         )
-        data = response.json().get("data", {})
-        if data:
-            return data["ticket"]["deeplink"]
+        if ticket := response.json().get("data", {}).get("ticket"):
+            return ticket["deeplink"]
 
-    def _get_fuel_types(self) -> bool | None:
+    def _check_fuel(self) -> bool | None:
         """"""
         uri = "fuel/qr/fuel-types"
         if not self.__fuel:
             response = self._do_call(method="get", uri=uri)
             data = response.json().get("data", {})
-            if data.get("registration_state",
-                        "") != config.RegistrationStates.open:
+            if not data.get("fuel_types", []):
                 return
             self.__fuel = self._get_preferred_fuel()
         return True
 
-    def _get_available_fuel(self) -> list:
+    def _get_fuels_report(self) -> list:
         """"""
         uri = "map/a"
         response = self._do_call(method="get", uri=uri)
@@ -183,27 +188,24 @@ class FuelQrCodeManager:
 
     def _get_preferred_fuel(self) -> BaseFuel:
         if config.GET_FUEL_WITH_MAXIMUM_BALANCES:
-            available_fuels = self._get_available_fuel()
+            fuels_list = self._get_fuels_report()
             LOG.info(f"Get preferred fuel from {self._fuel_types}...")
-            fuel_types = (f(available_fuels) for f in self._fuel_types)
+            fuel_types = (f(fuels_list) for f in self._fuel_types)
             fuel = max(fuel_types, key=lambda f: f.percent)
         else:
             fuel = self._fuel_types[0]()
-        LOG.debug(f"Set preferred fuel type `{fuel}`")
+        LOG.debug(f"Set preferred fuel type `{fuel}`...")
         return fuel
 
     def get_fuel_qr(self) -> Any:
         """"""
         LOG.info(f"create `fuel Qr code` for `{self._number}`...")
         try:
-            if self.__ttl_start is None:
-                self._session_status()
-                self._plate_check()
-            if self._get_fuel_types():
+            if self._check_fuel():
                 LOG.info(
                     f"Persistent and preferred fuel is `{self.__fuel.title}`...")
                 if link := self._create_fuel_qr():
-                    LOG.debug(f"qr code created {link}...")
+                    LOG.debug(f"obtained qr code source `{link}`...")
                     return self._generate_qr(link)
             # reload session triggering if ttl exceeded
             self._check_ttl()
