@@ -41,6 +41,13 @@ class A95Ultra(BaseFuel):
 
 
 @dataclass
+class A100(BaseFuel):
+    id: int = "6"
+    title: str = "a100"
+    code: str = "a100"
+
+
+@dataclass
 class Diesel(BaseFuel):
     id: int = "1"
     title: str = "diesel"

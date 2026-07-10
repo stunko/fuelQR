@@ -143,7 +143,7 @@ class FuelQrCodeManager:
     def _check_ttl(self) -> None:
         """"""
         elapsed_time = time.monotonic() - self.__ttl_start
-        LOG.debug(f"check session ttl state, elapsed tine `{elapsed_time}`...")
+        LOG.debug(f"check session ttl state, elapsed time `{elapsed_time}`...")
 
         if config.SESSION_TTL > elapsed_time:
             return
