@@ -27,7 +27,9 @@ class FuelQrCodeManager:
             self,
             number: str,
             fuel_types: list | BaseFuel,
+            *args,
             email: str = None,
+            **kwargs
     ) -> None:
         """"""
         self.email = email
@@ -157,7 +159,7 @@ class FuelQrCodeManager:
         """"""
         uri = "fuel/qr/create"
         payload = {
-            "car_plate": self._number,
+            "car_plate": self._number.upper(),
             "fuel_type_id": self.__fuel.id,
             "plate_format_confirmed": plate_format_confirmed
         }

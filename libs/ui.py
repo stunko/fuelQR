@@ -57,7 +57,9 @@ class FakeWebMessenger:
 
     def _get_button(self, name: str, timeout=10) -> Locator:
         """"""
-        button = self._page.get_by_role("button", name=name, exact=False)
+        button = self._page.locator(f"button[aria-label='{name}']")
+        # wait button exists in DOM tree
+        button.wait_for(state="attached", timeout=timeout * 1000)
         expect(button).to_be_visible(
             timeout=timeout * 1000
         )

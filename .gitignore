@@ -27,4 +27,5 @@ temp
 
 configs/settings*
 .user_data
+.tinydb/*
 

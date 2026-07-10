@@ -94,3 +94,7 @@ QR_BACK_COLOR = "#ffffff"
 QR_IMAGE_SIZE = (260, 260)
 QR_IMAGE_FORMAT = "PNG"
 QR_OUTPUT = ".qr_codes"
+
+# DataBase
+DB_PATH = ".tinydb"
+DB_NAME = "users.json"
